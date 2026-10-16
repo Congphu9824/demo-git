@@ -1,0 +1,49 @@
+# ==============================================================================
+# CẤU HÌNH GRAFANA LOKI (STRUCTURED LOGS AGGREGATOR)
+# Dùng để thu thập và lưu trữ Log tập trung (như ElasticSearch nhưng nhẹ hơn nhiều)
+# ==============================================================================
+
+auth_enabled: false   # Tắt xác thực nhiều tenant (dùng cho môi trường đơn/local)
+
+# 1. Cổng mạng của Loki
+server:
+  http_listen_port: 3100   # Cổng HTTP nhận log và cho Grafana truy vấn (LogQL)
+  grpc_listen_port: 9096
+
+# 2. Cấu hình thư mục lưu trữ dữ liệu log
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki/v2
+  storage:
+    filesystem:
+      chunks_directory: /loki/v2/chunks   # Thư mục lưu các khối log nén
+      rules_directory: /loki/v2/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+# 3. Định dạng cấu trúc chỉ mục (Schema Index)
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb                      # Sử dụng TSDB (Time-Series Database) để tìm kiếm log siêu tốc
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_v2_
+        period: 24h
+
+# 4. Giới hạn và chính sách dọn dẹp log (Retention)
+limits_config:
+  allow_structured_metadata: true      # Bắt buộc bật cho Loki 3.x nhận OTLP logs
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h     # Từ chối nhận log cũ hơn 7 ngày
+  retention_period: 72h                # Thời gian giữ log: 72 tiếng (3 ngày), sau đó tự động xóa
+
+# 5. Bộ gom dọn dẹp tự động
+compactor:
+  working_directory: /loki/v2/compactor
+  delete_request_store: filesystem
+  retention_enabled: true              # Bật tính năng tự động xóa log hết hạn
+

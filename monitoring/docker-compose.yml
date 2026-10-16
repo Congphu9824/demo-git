@@ -1,0 +1,103 @@
+# ==============================================================================
+# DOCKER COMPOSE CHO CỤM MONITORING (LGTM STACK: Loki - Grafana - Tempo - Prometheus)
+# ==============================================================================
+
+networks:
+  monitoring:
+    driver: bridge
+
+# Khai báo các Volume để lưu trữ dữ liệu bền vững (tắt máy không bị mất số liệu)
+volumes:
+  prometheus_data:   # Lưu số liệu chỉ số (Metrics)
+  loki_data:         # Lưu trữ Logs
+  tempo_data:        # Lưu trữ Traces
+  grafana_data:      # Lưu cấu hình người dùng Grafana
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. PROMETHEUS: Máy chủ thu thập và lưu trữ số liệu (Metrics Time-Series)
+  # ----------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: monitoring-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"    # Giao diện Prometheus Web UI: http://localhost:9090
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro  # File cấu hình cào dữ liệu
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro          # File quy tắc cảnh báo (Alert Rules)
+      - prometheus_data:/prometheus
+    extra_hosts:
+      # Cho phép container Prometheus gọi ngược về Backend đang chạy trên máy Host Windows
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------------------------
+  # 2. GRAFANA TEMPO: Máy chủ lưu trữ Distributed Tracing (truy vết từng request)
+  # ----------------------------------------------------------------------------
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: monitoring-tempo
+    restart: unless-stopped
+    command: [ "-config.file=/etc/tempo/tempo.yaml" ]
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"        # Cổng HTTP nội bộ để Grafana đọc Traces
+      - "${OTLP_GRPC_PORT:-4317}:4317"    # Cổng OTLP gRPC: Backend .NET gửi traces sang đây
+      - "${OTLP_HTTP_PORT:-4318}:4318"    # Cổng OTLP HTTP
+    volumes:
+      - ./tempo/tempo-config.yml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------------------------
+  # 3. GRAFANA LOKI: Máy chủ tập trung và lưu trữ Logs có cấu trúc (Structured Logs)
+  # ----------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: monitoring-loki
+    restart: unless-stopped
+    command: [ "-config.file=/etc/loki/local-config.yaml" ]
+    ports:
+      - "${LOKI_PORT:-3100}:3100"         # Cổng nhận Logs và để Grafana truy vấn Logs
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------------------------
+  # 4. GRAFANA: Giao diện Dashboard trực quan duy nhất (Single Pane of Glass)
+  # ----------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.1.4
+    container_name: monitoring-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}         # Tài khoản mặc định: admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin} # Mật khẩu mặc định: admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_LOG_MODE=console
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor,traceqlSearch
+    ports:
+      # Map cổng máy Host 3001 vào container 3000 (để tránh xung đột cổng 3000 của Frontend Next.js)
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro # Tự động tạo kết nối Datasource
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro   # Tự động nạp Dashboard
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro                         # Thư mục chứa file Dashboard JSON
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+    networks:
+      - monitoring
+

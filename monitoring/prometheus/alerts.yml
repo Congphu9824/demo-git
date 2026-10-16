@@ -1,0 +1,47 @@
+# ==============================================================================
+# QUY TẮC CẢNH BÁO HỆ THỐNG (PROMETHEUS ALERT RULES)
+# Khi các điều kiện này thỏa mãn, Prometheus sẽ kích hoạt trạng thái Firing (Báo động)
+# ==============================================================================
+
+groups:
+  - name: ecommerce_alerts
+    rules:
+      # ------------------------------------------------------------------------
+      # CẢNH BÁO 1: Tỉ lệ lỗi Server 5xx / Giao dịch thất bại
+      # ------------------------------------------------------------------------
+      - alert: HighErrorRate
+        expr: sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[2m])) > 0 or sum(increase(orders_failed_total[2m])) > 0 or sum(rate(api_exceptions_total{status_code=~"5.."}[2m])) > 0
+        for: 5s                       # Đếm 5 giây để kích hoạt Firing ngay lập tức
+        labels:
+          severity: critical          # Mức độ nghiêm trọng: Nguy cấp
+          service: ECommerce.Api
+        annotations:
+          summary: "Tỉ lệ lỗi HTTP 5xx tăng cao trên ECommerce API"
+          description: "Phát hiện lỗi HTTP 500 hoặc giao dịch thất bại trong hệ thống."
+
+      # ------------------------------------------------------------------------
+      # CẢNH BÁO 2: Độ trễ P95 vượt quá 1 giây (Hệ thống bị chậm)
+      # ------------------------------------------------------------------------
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[2m]))) > 1.0 or (sum(rate(payment_duration_milliseconds_sum[2m])) / sum(rate(payment_duration_milliseconds_count[2m]))) > 1000 or (sum(rate(database_query_duration_milliseconds_sum[2m])) / sum(rate(database_query_duration_milliseconds_count[2m]))) > 1000
+        for: 5s                       # Đếm 5 giây để kích hoạt Firing
+        labels:
+          severity: warning           # Mức độ: Cảnh báo
+          service: ECommerce.Api
+        annotations:
+          summary: "Độ trễ phản hồi chậm bất thường"
+          description: "Độ trễ xử lý đơn hàng đang vượt ngưỡng 1.0 giây."
+
+      # ------------------------------------------------------------------------
+      # CẢNH BÁO 3: Backend API bị sập hoặc mất kết nối
+      # ------------------------------------------------------------------------
+      - alert: ServiceDown
+        expr: up{job="ecommerce-api"} == 0
+        for: 5s                       # Mất kết nối 5 giây là bắn báo động đỏ
+        labels:
+          severity: critical          # Mức độ: Khẩn cấp cao nhất
+          service: ECommerce.Api
+        annotations:
+          summary: "Dịch vụ Backend ECommerce API đã dừng hoạt động"
+          description: "Prometheus không thể kết nối tới Backend tại host.docker.internal:5000."
+

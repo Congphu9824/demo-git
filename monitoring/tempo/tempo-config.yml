@@ -1,0 +1,45 @@
+# ==========================================
+# CẤU HÌNH GRAFANA TEMPO (DISTRIBUTED TRACING)
+# Dùng để lưu trữ và truy vết chi tiết từng request
+# ==========================================
+
+# 1. Cổng HTTP của Tempo (Grafana kết nối vào cổng này để đọc trace)
+server:
+  http_listen_port: 3200
+
+stream_over_http_enabled: true
+
+# 2. Cổng tiếp nhận Trace từ Backend (.NET dùng OpenTelemetry đẩy về đây)
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"   # Cổng gRPC siêu nhanh nhận trace
+        http:
+          endpoint: "0.0.0.0:4318"   # Cổng HTTP nhận trace
+
+# 3. Gom dữ liệu tạm trong bộ nhớ tối đa 5 phút trước khi ghi thành block
+ingester:
+  max_block_duration: 5m
+
+# 4. Thời gian lưu trữ trace (quá 24 giờ tự động dọn dẹp để nhẹ ổ cứng)
+compactor:
+  compaction:
+    block_retention: 24h
+
+# 5. Nơi lưu trữ dữ liệu Trace trên ổ đĩa
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces         # Thư mục lưu các file trace
+    wal:
+      path: /var/tempo/wal            # Ghi tạm (Write-Ahead Log) chống mất dữ liệu khi tắt máy
+
+# 6. Tự động phân tích Trace để vẽ sơ đồ kiến trúc (Service Graph)
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics]
+

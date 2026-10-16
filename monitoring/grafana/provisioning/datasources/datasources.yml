@@ -1,0 +1,66 @@
+# ==============================================================================
+# CẤU HÌNH NGUỒN DỮ LIỆU GRAFANA (PROVISIONING DATASOURCES)
+# Tự động kết nối Grafana với Prometheus, Loki, và Tempo khi vừa khởi động Docker
+# ==============================================================================
+
+apiVersion: 1
+
+datasources:
+  # ----------------------------------------------------------------------------
+  # 1. PROMETHEUS DATASOURCE: Nguồn dữ liệu số liệu (Metrics) mặc định
+  # ----------------------------------------------------------------------------
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090        # Tên host của container prometheus trong mạng Docker
+    isDefault: true                    # Đặt làm nguồn dữ liệu mặc định
+    editable: true
+    jsonData:
+      timeInterval: 3s
+      httpMethod: POST
+
+  # ----------------------------------------------------------------------------
+  # 2. LOKI DATASOURCE: Nguồn dữ liệu Logs (kèm tính năng bấm vào log nhảy sang Trace)
+  # ----------------------------------------------------------------------------
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    url: http://loki:3100              # Tên host container loki
+    isDefault: false
+    editable: true
+    jsonData:
+      # Tự động trích xuất chuỗi TraceID 32 ký tự trong log để tạo nút bấm liên kết sang Tempo
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: "(?:traceId|trace_id|TraceId)[\"\\s:=]+([a-fA-F0-9]{32})"
+          name: TraceID
+          url: "$${__value.raw}"
+
+  # ----------------------------------------------------------------------------
+  # 3. TEMPO DATASOURCE: Nguồn dữ liệu Traces (kèm tính năng Trace-to-Logs)
+  # ----------------------------------------------------------------------------
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200             # Tên host container tempo
+    isDefault: false
+    editable: true
+    jsonData:
+      httpMethod: GET
+      nodeGraph:
+        enabled: true                  # Bật vẽ biểu đồ node graph tương tác giữa các service
+      # Khi đang xem 1 span trong trace, bấm nút "Logs for this span" sẽ tự tìm đúng log trong Loki
+      tracesToLogsV2:
+        datasourceUid: "loki"
+        spanStartTimeShift: "-2m"
+        spanEndTimeShift: "2m"
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: true
+        query: '{service_name="$${__span.tags["service.name"]}"} |= "$${__trace.id}"'
+      lokiSearch:
+        datasourceUid: "loki"
+

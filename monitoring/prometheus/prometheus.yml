@@ -1,0 +1,32 @@
+# ==============================================================================
+# CẤU HÌNH PROMETHEUS (METRICS SCRAPER & STORAGE)
+# ==============================================================================
+
+global:
+  scrape_interval: 3s       # Cứ 3 giây đi "cào" (thu thập) số liệu một lần
+  evaluation_interval: 3s   # Cứ 3 giây kiểm tra lại các quy tắc cảnh báo (Alerts) một lần
+  scrape_timeout: 2s        # Quá 2 giây không phản hồi thì tính là timeout
+
+# Nạp file chứa các quy tắc cảnh báo (Alert Rules)
+rule_files:
+  - "/etc/prometheus/alerts.yml"
+
+# Danh sách các dịch vụ cần thu thập số liệu (Jobs)
+scrape_configs:
+  # 1. Thu thập số liệu từ Backend Web API (.NET 9)
+  - job_name: "ecommerce-api"
+    metrics_path: "/metrics"                           # Đường dẫn lấy metrics trên Backend
+    scrape_protocols:
+      - PrometheusText0.0.4
+    static_configs:
+      - targets: ["host.docker.internal:5000"]          # Địa chỉ Backend đang chạy ở máy Host port 5000
+        labels:
+          application: "ECommerce"
+          service_name: "ECommerce.Api"
+          environment: "development"
+
+  # 2. Tự giám sát chính bản thân server Prometheus
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+

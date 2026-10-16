@@ -1,0 +1,19 @@
+# ==============================================================================
+# CẤU HÌNH TỰ ĐỘNG NẠP DASHBOARD VÀO GRAFANA (PROVISIONING DASHBOARDS)
+# Giúp Grafana tự nạp file JSON từ thư mục mà không cần người dùng tự import bằng tay
+# ==============================================================================
+
+apiVersion: 1
+
+providers:
+  - name: "Application Observability"
+    orgId: 1
+    folder: "Observability"            # Tên thư mục chứa Dashboard trong menu Grafana
+    type: file
+    disableDeletion: false             # Cho phép chỉnh sửa/xóa nếu muốn
+    editable: true                     # Cho phép người dùng chỉnh sửa giao diện trên web
+    updateIntervalSeconds: 10          # Quét lại thư mục mỗi 10 giây nếu file JSON có thay đổi
+    allowUiUpdates: true
+    options:
+      # Đường dẫn thư mục bên trong container Grafana chứa file application-observability.json
+      path: /var/lib/grafana/dashboard
